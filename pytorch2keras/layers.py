@@ -46,6 +46,8 @@ def convert_reshape(node, node_name, input_name, output_name, layers):
         layers: dictionary with keras tensors
     """
     print('Converting reshape ...')
+    import ipdb
+    ipdb.set_trace()
     target_shape = node.new_sizes
     reshape = keras.layers.Reshape(target_shape[1:], name=output_name)
     layers[output_name] = reshape(layers[input_name])
@@ -336,7 +338,8 @@ def convert_prelu(node, node_name, input_name, output_name, layers):
     """
     print('Converting PReLU ...')
     a = node.next_functions[1][0].variable.data.numpy()
-    prelu = keras.layers.PReLU(name=output_name, weights=np.array([a]))
+    prelu = keras.layers.PReLU(name=output_name, weights=[
+                               a[:, np.newaxis, np.newaxis]], shared_axes=[2, 3])
     layers[output_name] = prelu(layers[input_name])
 
 

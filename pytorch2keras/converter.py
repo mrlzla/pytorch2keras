@@ -1,7 +1,7 @@
 import keras
 from collections import OrderedDict
 
-from layers import AVAILABLE_CONVERTERS
+from .layers import AVAILABLE_CONVERTERS
 
 
 """
@@ -66,15 +66,20 @@ def create_keras_model(nodes, layers, input_node_name='input'):
     node_names = {}
     output_node_name = ''
     for i, node in enumerate(nodes):
+        node_fullname = str(type(node).__name__)
+        if node_fullname.startswith("Expand"):
+            continue
         node_names[node] = \
             '{0}_{1}'.format(
-                str(type(node).__name__.replace('Backward', '')),
-                i)
+                node_fullname[:node_fullname.index("Backward")], i)
         output_node_name = node_names[node]
 
     while nodes:
         node, children = nodes.popitem(last=False)
-        node_type = str(type(node).__name__.replace('Backward', ''))
+        node_fullname = str(type(node).__name__)
+        node_type = node_fullname[:node_fullname.index("Backward")]
+        if node_type == "Expand":
+            continue
         node_name = node_names[node]
 
         print('Queued {0}, processing {1}'.format(len(nodes), node_name))
@@ -143,13 +148,19 @@ def pytorch_to_keras(input_shape, pytorch_output, change_ordering=False):
                 layer['config']['data_format'] = 'channels_last'
             if layer['config'] and 'axis' in layer['config']:
                 layer['config']['axis'] = 3
+            if layer['config'] and layer['class_name'] == 'Reshape' and len(layer['config']['target_shape']) == 3:
+                t_shape = layer['config']['target_shape']
+                layer['config']['target_shape'] = (
+                    t_shape[1], t_shape[2], t_shape[0])
+            if layer['config'] and layer['class_name'] == 'PReLU':
+                layer['config']['shared_axes'] = [1, 2]
 
         K.set_image_data_format('channels_last')
         model_tf_ordering = keras.models.Model.from_config(conf)
 
         # from keras.utils.layer_utils import convert_all_kernels_in_model
         # convert_all_kernels_in_model(model)
-
+        first_fc = True
         for dst_layer, src_layer in zip(
             model_tf_ordering.layers, model.layers
         ):
