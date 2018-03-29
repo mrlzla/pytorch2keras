@@ -9,7 +9,7 @@ import torch.serialization
 import contextlib
 from torch.jit import _unique_state_dict
 
-from layers import AVAILABLE_CONVERTERS
+from .layers import AVAILABLE_CONVERTERS
 
 
 @contextlib.contextmanager
@@ -52,7 +52,7 @@ def _optimize_trace(trace, aten):
 
 def get_node_id(node):
     import re
-    node_id = re.search(r"[\d]+", node.__str__())[0]
+    node_id = re.search(r"[\d]+", node.__str__()).group(0)
     return node_id
 
 
@@ -129,7 +129,7 @@ def pytorch_to_keras(
         if len(node_input_names) == 0:
             node_input_names.append('input')
 
-        node_type = node.kind()
+        node_type = node.kind().replace("onnx::", "")
         # print(dir(node))
 
         node_scope_name = node.scopeName()

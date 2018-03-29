@@ -495,6 +495,28 @@ def convert_lrelu(params, w_name, scope_name, inputs, layers, weights):
     layers[scope_name] = leakyrelu(layers[inputs[0]])
 
 
+def convert_prelu(params, w_name, scope_name, inputs, layers, weights):
+    """
+    Convert parametric relu layer.
+
+   Args:
+        params: dictionary with layer parameters
+        w_name: name prefix in state_dict
+        scope_name: pytorch scope name
+        inputs: pytorch node inputs
+        layers: dictionary with keras tensors
+        weights: pytorch state_dict
+    """
+    print('Converting prelu ...')
+
+    tf_name = w_name + str(random.random())
+    weights_name = '{0}.weight'.format(w_name)
+    W = weights[weights_name].numpy().reshape([-1, 1, 1])
+    prelu = \
+        keras.layers.PReLU(weights=[W], name=tf_name, shared_axes=[2, 3])
+    layers[scope_name] = prelu(layers[inputs[0]])
+
+
 def convert_sigmoid(params, w_name, scope_name, inputs, layers, weights):
     """
     Convert sigmoid layer.
@@ -706,7 +728,8 @@ def convert_constant(params, w_name, scope_name, inputs, layers, weights):
     """
     print('Converting constant ...')
 
-    target_layer = lambda x: keras.backend.constant(np.float32(params['value']))
+    target_layer = lambda x: keras.backend.constant(
+        np.float32(params['value']))
     lambda_layer = keras.layers.Lambda(target_layer)
     layers[scope_name] = lambda_layer(layers[inputs[0]])
 
@@ -753,6 +776,7 @@ AVAILABLE_CONVERTERS = {
     'Concat': convert_concat,
     'Relu': convert_relu,
     'LeakyRelu': convert_lrelu,
+    "PRelu": convert_prelu,
     'Sigmoid': convert_sigmoid,
     'Softmax': convert_softmax,
     'Tanh': convert_tanh,
