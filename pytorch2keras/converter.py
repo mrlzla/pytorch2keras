@@ -191,6 +191,12 @@ def pytorch_to_keras(
                 layer['config']['data_format'] = 'channels_last'
             if layer['config'] and 'axis' in layer['config']:
                 layer['config']['axis'] = 3
+            # if layer['config'] and layer['class_name'] == 'Reshape' and len(layer['config']['target_shape']) == 3:
+            #     t_shape = layer['config']['target_shape']
+            #     layer['config']['target_shape'] = (
+            #         t_shape[1], t_shape[2], t_shape[0])
+            if layer['config'] and layer['class_name'] == 'PReLU':
+                layer['config']['shared_axes'] = [1, 2]
 
         K.set_image_data_format('channels_last')
         model_tf_ordering = keras.models.Model.from_config(conf)
@@ -201,7 +207,12 @@ def pytorch_to_keras(
         for dst_layer, src_layer in zip(
             model_tf_ordering.layers, model.layers
         ):
-            dst_layer.set_weights(src_layer.get_weights())
+            try:
+                dst_layer.set_weights(src_layer.get_weights())
+            except Exception as e:
+                print(e)
+                dst_layer.set_weights(
+                    [src_layer.get_weights()[0].reshape([1, 1, -1])])
 
         model = model_tf_ordering
 

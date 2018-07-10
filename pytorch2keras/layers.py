@@ -126,14 +126,6 @@ def convert_convtranspose(params, w_name, scope_name, inputs, layers, weights):
             biases = None
             has_bias = False
 
-        padding_name = tf_name + '_pad'
-        padding_layer = keras.layers.ZeroPadding2D(
-            padding=(params['pads'][0], params['pads'][1]),
-            name=padding_name
-        )
-        layers[padding_name] = padding_layer(layers[inputs[0]])
-        input_name = padding_name
-
         weights = None
         if has_bias:
             weights = [W, biases]
@@ -151,7 +143,16 @@ def convert_convtranspose(params, w_name, scope_name, inputs, layers, weights):
             dilation_rate=params['dilations'][0],
             name=tf_name
         )
-        layers[scope_name] = conv(layers[input_name])
+        middle_name = tf_name + 'transposed'
+        layers[middle_name] = conv(layers[inputs[0]])
+
+        cropping_name = tf_name + '_crop'
+        cropping_layer = keras.layers.Cropping2D(
+            cropping=(params['pads'][0], params['pads'][1]),
+            name=cropping_name
+        )
+        layers[scope_name] = cropping_layer(layers[middle_name])
+        input_name = scope_name
     else:
         raise AssertionError('Layer is not supported for now')
 
@@ -328,8 +329,8 @@ def convert_batchnorm(params, w_name, scope_name, inputs, layers, weights):
         layers: dictionary with keras tensors
         weights: pytorch state_dict
     """
-    print('Converting batchnorm ...')
 
+    print('Converting batchnorm ...')
     tf_name = w_name + str(random.random())
 
     bias_name = '{0}.bias'.format(w_name)
