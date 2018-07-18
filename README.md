@@ -1,11 +1,21 @@
 # pytorch2keras
+
+[![Build Status](https://travis-ci.com/nerox8664/pytorch2keras.svg?branch=master)](https://travis-ci.com/nerox8664/pytorch2keras)
+
 Pytorch to Keras model convertor. Still beta for now.
+
+## Installation
+
+```
+pip install pytorch2keras 
+```
 
 ## Important notice
 
-In that moment the only PyTorch 0.2 (deprecated) and PyTorch 0.4 (in master) are supported.
+In that moment the only PyTorch 0.2 (deprecated) and PyTorch 0.4 (latest stable) are supported.
 
 To use the converter properly, please, make changes in your `~/.keras/keras.json`:
+
 
 ```
 ...
@@ -13,6 +23,14 @@ To use the converter properly, please, make changes in your `~/.keras/keras.json
 "image_data_format": "channels_first",
 ...
 ```
+
+From the latest releases, multiple inputs is also supported.
+
+
+## Tensorflow.js
+
+For the proper convertion to the tensorflow.js format, please use a new flag `short_names=True`.
+
 
 ## How to build the latest PyTorch
 
@@ -55,7 +73,7 @@ We're using dummy-variable in order to trace the model.
 ```
 from converter import pytorch_to_keras
 # we should specify shape of the input tensor
-k_model = pytorch_to_keras(model, input_var, (10, 32, 32,), verbose=True)  
+k_model = pytorch_to_keras(model, input_var, [(10, 32, 32,)], verbose=True)  
 ```
 
 That's all! If all is ok, the Keras model is stores into the `k_model` variable.
@@ -69,6 +87,7 @@ Layers:
 * ConvTranspose2d
 * MaxPool2d
 * AvgPool2d
+* Global average pooling (as special case of AdaptiveAvgPool2d)
 * Embedding
 * UpsamplingNearest2d
 
@@ -108,11 +127,13 @@ Misc:
 ## Models converted with pytorch2keras
 
 * ResNet18
+* ResNet34
 * ResNet50
 * SqueezeNet (with ceil_mode=False)
 * DenseNet
 * AlexNet
-* Inception (v4 only) (only with 0.2)
+* Inception (v4 only)
+* SeNet
 
 ## Usage
 Look at the `tests` directory.

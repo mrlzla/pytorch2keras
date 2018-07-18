@@ -8,7 +8,7 @@ import torchvision
 if __name__ == '__main__':
     max_error = 0
     for i in range(10):
-        model = torchvision.models.resnet18()
+        model = torchvision.models.resnet34()
         for m in model.modules():
             m.training = False
 
@@ -16,12 +16,10 @@ if __name__ == '__main__':
         input_var = Variable(torch.FloatTensor(input_np))
         output = model(input_var)
 
-        k_model = pytorch_to_keras(model, input_var, (3, 224, 224,), verbose=True, change_ordering=True)
+        k_model = pytorch_to_keras(model, input_var, (3, 224, 224,), verbose=True)
 
         pytorch_output = output.data.numpy()
-        keras_output = k_model.predict(input_np.transpose(0, 2, 3, 1))
-
-        print(pytorch_output.shape, keras_output.shape)
+        keras_output = k_model.predict(input_np)
 
         error = np.max(pytorch_output - keras_output)
         print(error)

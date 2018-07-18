@@ -32,33 +32,34 @@ def set_training(model, mode):
             model.train(old_mode)
 
 
-def _optimize_trace(trace, aten):
+def _optimize_graph(graph, aten):
     # run dce first to eliminate dead parts of the graph that might have been
     # left behind by things like symbolic_override
-    torch._C._jit_pass_dce(trace)
-    torch._C._jit_pass_lint(trace)
+    torch._C._jit_pass_dce(graph)
+    torch._C._jit_pass_lint(graph)
 
-    torch._C._jit_pass_peephole(trace)
-    torch._C._jit_pass_lint(trace)
-    torch._C._jit_pass_onnx(trace, aten)
-    torch._C._jit_pass_lint(trace)
-    torch._C._jit_pass_onnx_peephole(trace)
-    torch._C._jit_pass_lint(trace)
-    torch._C._jit_pass_dce(trace)
-    torch._C._jit_pass_lint(trace)
-    torch._C._jit_pass_canonicalize(trace)
-    torch._C._jit_pass_lint(trace)
+    torch._C._jit_pass_peephole(graph)
+    torch._C._jit_pass_lint(graph)
+    graph = torch._C._jit_pass_onnx(graph, aten)
+    torch._C._jit_pass_lint(graph)
+    torch._C._jit_pass_onnx_peephole(graph)
+    torch._C._jit_pass_lint(graph)
+    torch._C._jit_pass_dce(graph)
+    torch._C._jit_pass_lint(graph)
+    graph = torch._C._jit_pass_canonicalize(graph)
+    torch._C._jit_pass_lint(graph)
+    return graph
 
 
 def get_node_id(node):
     import re
-    node_id = re.search(r"[\d]+", node.__str__()).group(0)
-    return node_id
+    node_id = re.search(r"[\d]+", node.__str__())
+    return node_id.group(0)
 
 
 def pytorch_to_keras(
-    model, args, input_shape,
-    change_ordering=False, training=False, verbose=False
+    model, args, input_shapes,
+    change_ordering=False, training=False, verbose=False, short_names=False,
 ):
     """
     By given pytorch model convert layers with specified convertors.
@@ -66,10 +67,11 @@ def pytorch_to_keras(
     Args:
         model: pytorch model
         args: pytorch model arguments
-        input_shape: keras input shape (using for InputLayer creation)
+        input_shapes: keras input shapes (using for each InputLayer)
         change_ordering: change CHW to HWC
         training: switch model to training mode
         verbose: verbose output
+        short_names: use shorn names for keras layers
 
     Returns:
         model: created keras model.
@@ -79,16 +81,21 @@ def pytorch_to_keras(
     if isinstance(args, torch.autograd.Variable):
         args = (args, )
 
+    # Workaround for previous versions
+    if isinstance(input_shapes, tuple):
+        input_shapes = [input_shapes]
+
     orig_state_dict_keys = _unique_state_dict(model).keys()
 
     with set_training(model, training):
-        trace, torch_out = torch.jit.get_trace_graph(model, args)
+        trace, torch_out = torch.jit.get_trace_graph(model, tuple(args))
 
     if orig_state_dict_keys != _unique_state_dict(model).keys():
         raise RuntimeError("state_dict changed after running the tracer; "
                            "something weird is happening in your model!")
 
-    _optimize_trace(trace, False)
+    # _optimize_trace(trace, False)
+    trace.set_graph(_optimize_graph(trace.graph(), False))
 
     if verbose:
         print(trace.graph())
@@ -101,11 +108,12 @@ def pytorch_to_keras(
 
     # Collect graph outputs
     graph_outputs = [n.uniqueName() for n in trace.graph().outputs()]
+    print('Graph outputs:', graph_outputs)
 
     # Collect model state dict
     state_dict = _unique_state_dict(model)
     if verbose:
-        print(list(state_dict))
+        print('State dict:', list(state_dict))
 
     import re
     import keras
@@ -113,12 +121,16 @@ def pytorch_to_keras(
     K.set_image_data_format('channels_first')
 
     layers = dict()
-    layers['input'] = keras.layers.InputLayer(
-        input_shape=input_shape, name='input'
-    ).output
+    keras_inputs = []
+    for i in range(len(args)):
+        layers['input{0}'.format(i)] = keras.layers.InputLayer(
+            input_shape=input_shapes[i], name='input{0}'.format(i)
+        ).output
+        keras_inputs.append(layers['input{0}'.format(i)])
 
     outputs = []
 
+    input_index = 0
     for node in nodes:
         node_inputs = list(node.inputs())
         node_input_names = []
@@ -127,7 +139,8 @@ def pytorch_to_keras(
                 node_input_names.append(get_node_id(node_input.node()))
 
         if len(node_input_names) == 0:
-            node_input_names.append('input')
+            node_input_names.append('input{0}'.format(input_index))
+            input_index += 1
 
         node_type = node.kind().replace("onnx::", "")
         # print(dir(node))
@@ -158,12 +171,13 @@ def pytorch_to_keras(
             node_attrs,
             node_weights_name, node_id,
             node_input_names,
-            layers, state_dict
+            layers, state_dict,
+            short_names
         )
         if node_id in graph_outputs:
             outputs.append(layers[node_id])
 
-    model = keras.models.Model(inputs=layers['input'], outputs=outputs)
+    model = keras.models.Model(inputs=keras_inputs, outputs=outputs)
 
     if change_ordering:
         import numpy as np
@@ -171,21 +185,20 @@ def pytorch_to_keras(
         for layer in conf['layers']:
             if layer['config'] and 'batch_input_shape' in layer['config']:
                 layer['config']['batch_input_shape'] = \
-                    tuple(np.reshape(
+                    tuple(np.reshape(np.array(
                         [
-                            None,
-                            *layer['config']['batch_input_shape'][2:][:],
-                            layer['config']['batch_input_shape'][1]
-                        ], -1
+                            [None] +
+                            list(layer['config']['batch_input_shape'][2:][:]) +
+                            [layer['config']['batch_input_shape'][1]]
+                        ]), -1
                     ))
-
             if layer['config'] and 'target_shape' in layer['config']:
                 layer['config']['target_shape'] = \
-                    tuple(np.reshape(
+                    tuple(np.reshape(np.array(
                         [
-                            *layer['config']['target_shape'][1:][:],
+                            list(layer['config']['target_shape'][1:][:]),
                             layer['config']['target_shape'][0]
-                        ], -1
+                        ]), -1
                     ))
             if layer['config'] and 'data_format' in layer['config']:
                 layer['config']['data_format'] = 'channels_last'
