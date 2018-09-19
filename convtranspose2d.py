@@ -1,17 +1,23 @@
+import keras  # work around segfault
+import sys
 import numpy as np
+
 import torch
 import torch.nn as nn
 from torch.autograd import Variable
-from pytorch2keras.converter import pytorch_to_keras
+
+sys.path.append('../pytorch2keras')
+from pytorch2keras.converter import pytorch_to_keras as p2k
 
 
 class TestConvTranspose2d(nn.Module):
-    """Module for ConvTranspose2d conversion testing
+    """Module for Dense conversion testing
     """
 
-    def __init__(self, inp=10, out=16, kernel_size=3, padding=1, bias=True):
+    def __init__(self, inp=10, out=16, kernel_size=3, bias=True):
         super(TestConvTranspose2d, self).__init__()
-        self.conv2d = nn.ConvTranspose2d(inp, out, padding=1, kernel_size=kernel_size, bias=bias, stride=padding)
+        self.conv2d = nn.ConvTranspose2d(
+            inp, out, padding=1, stride=2, kernel_size=kernel_size, bias=bias)
 
     def forward(self, x):
         x = self.conv2d(x)
@@ -24,14 +30,13 @@ if __name__ == '__main__':
         kernel_size = np.random.randint(1, 7)
         inp = np.random.randint(kernel_size + 1, 100)
         out = np.random.randint(1, 100)
-
-        model = TestConvTranspose2d(inp, out, kernel_size, 2, inp % 3)
+        model = TestConvTranspose2d(inp, out, kernel_size, inp % 2)
 
         input_np = np.random.uniform(0, 1, (1, inp, inp, inp))
         input_var = Variable(torch.FloatTensor(input_np))
         output = model(input_var)
 
-        k_model = pytorch_to_keras(model, input_var, (inp, inp, inp,), verbose=True)
+        k_model = p2k((inp, inp, inp,), output)
 
         pytorch_output = output.data.numpy()
         keras_output = k_model.predict(input_np)

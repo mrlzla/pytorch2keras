@@ -2,6 +2,7 @@ import keras.layers
 import numpy as np
 import random
 import string
+from .keras_layers import InstanceNormalization
 
 
 def random_string(length):
@@ -33,12 +34,12 @@ def convert_conv(params, w_name, scope_name, inputs, layers, weights, short_name
     weights_name = '{0}.weight'.format(w_name)
     input_name = inputs[0]
 
-    if len(weights[weights_name].numpy().shape) == 4:
-        W = weights[weights_name].numpy().transpose(2, 3, 1, 0)
+    if len(weights[weights_name].cpu().numpy().shape) == 4:
+        W = weights[weights_name].cpu().numpy().transpose(2, 3, 1, 0)
         height, width, channels, n_filters = W.shape
 
         if bias_name in weights:
-            biases = weights[bias_name].numpy()
+            biases = weights[bias_name].cpu().numpy()
             has_bias = True
         else:
             biases = None
@@ -72,11 +73,11 @@ def convert_conv(params, w_name, scope_name, inputs, layers, weights, short_name
         )
         layers[scope_name] = conv(layers[input_name])
     else:
-        W = weights[weights_name].numpy().transpose(2, 1, 0)
+        W = weights[weights_name].cpu().numpy().transpose(2, 1, 0)
         width, channels, n_filters = W.shape
 
         if bias_name in weights:
-            biases = weights[bias_name].numpy()
+            biases = weights[bias_name].cpu().numpy()
             has_bias = True
         else:
             biases = None
@@ -133,25 +134,17 @@ def convert_convtranspose(params, w_name, scope_name, inputs, layers, weights, s
     bias_name = '{0}.bias'.format(w_name)
     weights_name = '{0}.weight'.format(w_name)
 
-    if len(weights[weights_name].numpy().shape) == 4:
-        W = weights[weights_name].numpy().transpose(2, 3, 1, 0)
+    if len(weights[weights_name].cpu().numpy().shape) == 4:
+        W = weights[weights_name].cpu().numpy().transpose(2, 3, 1, 0)
         height, width, n_filters, channels = W.shape
 
         if bias_name in weights:
-            biases = weights[bias_name].numpy()
+            biases = weights[bias_name].cpu().numpy()
             has_bias = True
         else:
             biases = None
             has_bias = False
 
-<< << << < HEAD
-== == == =
-        assert(params['pads'][0] == 0)
-        assert(params['pads'][1] == 0)
-
-        input_name = inputs[0]
-
->>>>>> > c1227044821ad6cb88db346b72d2b256d2ab8600
         weights = None
         if has_bias:
             weights = [W, biases]
@@ -178,7 +171,7 @@ def convert_convtranspose(params, w_name, scope_name, inputs, layers, weights, s
             name=cropping_name
         )
         layers[scope_name] = cropping_layer(layers[middle_name])
-        input_name = scope_name
+        #input_name = scope_name
     else:
         raise AssertionError('Layer is not supported for now')
 
@@ -230,13 +223,13 @@ def convert_gemm(params, w_name, scope_name, inputs, layers, weights, short_name
     bias_name = '{0}.bias'.format(w_name)
     weights_name = '{0}.weight'.format(w_name)
 
-    W = weights[weights_name].numpy().transpose()
+    W = weights[weights_name].cpu().numpy().transpose()
     input_channels, output_channels = W.shape
 
     keras_weights = [W]
     has_bias = False
     if bias_name in weights:
-        bias = weights[bias_name].numpy()
+        bias = weights[bias_name].cpu().numpy()
         keras_weights = [W, bias]
         has_bias = True
 
@@ -383,32 +376,27 @@ def convert_batchnorm(params, w_name, scope_name, inputs, layers, weights, short
         short_names: use short names for keras layers
     """
 
-<<<<<<< HEAD
-    print('Converting batchnorm ...')
-    tf_name = w_name + str(random.random())
-=======
     if short_names:
         tf_name = 'BN' + random_string(6)
     else:
         tf_name = w_name + str(random.random())
->>>>>>> c1227044821ad6cb88db346b72d2b256d2ab8600
-
+    
     bias_name = '{0}.bias'.format(w_name)
     weights_name = '{0}.weight'.format(w_name)
     mean_name = '{0}.running_mean'.format(w_name)
     var_name = '{0}.running_var'.format(w_name)
 
     if bias_name in weights:
-        beta = weights[bias_name].numpy()
+        beta = weights[bias_name].cpu().numpy()
 
     if weights_name in weights:
-        gamma = weights[weights_name].numpy()
+        gamma = weights[weights_name].cpu().numpy()
 
-    mean = weights[mean_name].numpy()
-    variance = weights[var_name].numpy()
+    mean = weights[mean_name].cpu().numpy()
+    variance = weights[var_name].cpu().numpy()
 
     eps = params['epsilon']
-    momentum = params['momentum']
+    momentum = params['momentum'] if 'momentum' in params else 0.1
 
     if weights_name not in weights:
         bn = keras.layers.BatchNormalization(
@@ -423,6 +411,67 @@ def convert_batchnorm(params, w_name, scope_name, inputs, layers, weights, short
             weights=[gamma, beta, mean, variance],
             name=tf_name
         )
+    layers[scope_name] = bn(layers[inputs[0]])
+
+
+def convert_instancenorm(params, w_name, scope_name, inputs, layers, weights, short_names):
+    """
+    Convert batch normalization layer.
+
+    Args:
+        params: dictionary with layer parameters
+        w_name: name prefix in state_dict
+        scope_name: pytorch scope name
+        inputs: pytorch node inputs
+        layers: dictionary with keras tensors
+        weights: pytorch state_dict
+        short_names: use short names for keras layers
+    """
+
+    print('Converting instancenorm ...')
+    if short_names:
+        tf_name = 'IN' + random_string(6)
+    else:
+        tf_name = w_name + str(random.random())
+
+    bias_name = '{0}.bias'.format(w_name)
+    weights_name = '{0}.weight'.format(w_name)
+    mean_name = '{0}.running_mean'.format(w_name)
+    var_name = '{0}.running_var'.format(w_name)
+
+    current_weights = []
+
+    if weights_name in weights:
+        gamma = weights[weights_name].cpu().numpy()
+        current_weights.append(gamma)
+        scale = True
+    else:
+        scale = False
+
+    if bias_name in weights:
+        beta = weights[bias_name].cpu().numpy()
+        current_weights.append(beta)
+        center = True
+    else:
+        center = False
+
+    if mean_name in weights and False:
+        mean = weights[mean_name].cpu().numpy()
+        variance = weights[var_name].cpu().numpy()
+        current_weights.extend([mean, variance])
+        running_stats = True
+    else:
+        running_stats = False
+
+    eps = params['epsilon']
+
+    bn = InstanceNormalization(
+        axis=1, epsilon=eps,
+        center=center, scale=scale,
+        moving_stats=running_stats,
+        weights=current_weights,
+        name=tf_name
+    )
     layers[scope_name] = bn(layers[inputs[0]])
 
 
@@ -549,7 +598,7 @@ def convert_concat(params, w_name, scope_name, inputs, layers, weights, short_na
     """
     print('Converting concat ...')
     concat_nodes = [layers[i] for i in inputs]
-    
+
     if short_names:
         tf_name = 'CAT' + random_string(5)
     else:
@@ -607,7 +656,8 @@ def convert_lrelu(params, w_name, scope_name, inputs, layers, weights, short_nam
         keras.layers.LeakyReLU(alpha=params['alpha'], name=tf_name)
     layers[scope_name] = leakyrelu(layers[inputs[0]])
 
-def convert_prelu(params, w_name, scope_name, inputs, layers, weights):
+
+def convert_prelu(params, w_name, scope_name, inputs, layers, weights, short_names):
     """
     Convert parametric relu layer.
 
@@ -620,13 +670,16 @@ def convert_prelu(params, w_name, scope_name, inputs, layers, weights):
         weights: pytorch state_dict
     """
     print('Converting prelu ...')
-
-    tf_name = w_name + str(random.random())
+    if short_names:
+        tf_name = 'lRELU' + random_string(3)
+    else:
+        tf_name = w_name + str(random.random())
     weights_name = '{0}.weight'.format(w_name)
-    W = weights[weights_name].numpy().reshape([-1, 1, 1])
+    W = weights[weights_name].cpu().numpy().reshape([-1, 1, 1])
     prelu = \
         keras.layers.PReLU(weights=[W], name=tf_name, shared_axes=[2, 3])
     layers[scope_name] = prelu(layers[inputs[0]])
+
 
 def convert_sigmoid(params, w_name, scope_name, inputs, layers, weights, short_names):
     """
@@ -802,7 +855,7 @@ def convert_matmul(params, w_name, scope_name, inputs, layers, weights, short_na
     if len(inputs) == 1:
         weights_name = '{0}.weight'.format(w_name)
 
-        W = weights[weights_name].numpy().transpose()
+        W = weights[weights_name].cpu().numpy().transpose()
         input_channels, output_channels = W.shape
 
         keras_weights = [W]
@@ -815,7 +868,7 @@ def convert_matmul(params, w_name, scope_name, inputs, layers, weights, short_na
     elif len(inputs) == 2:
         weights_name = '{0}.weight'.format(w_name)
 
-        W = weights[weights_name].numpy().transpose()
+        W = weights[weights_name].cpu().numpy().transpose()
         input_channels, output_channels = W.shape
 
         keras_weights = [W]
@@ -851,7 +904,7 @@ def convert_gather(params, w_name, scope_name, inputs, layers, weights, short_na
 
     weights_name = '{0}.weight'.format(w_name)
 
-    W = weights[weights_name].numpy()
+    W = weights[weights_name].cpu().numpy()
     input_channels, output_channels = W.shape
 
     keras_weights = [W]
@@ -970,12 +1023,12 @@ def convert_padding(params, w_name, scope_name, inputs, layers, weights, short_n
     # Magic ordering
     padding_name = tf_name
     padding_layer = keras.layers.ZeroPadding2D(
-        padding=((params['pads'][2], params['pads'][6]), (params['pads'][3], params['pads'][7])),
+        padding=((params['pads'][2], params['pads'][6]),
+                 (params['pads'][3], params['pads'][7])),
         name=padding_name
     )
 
     layers[scope_name] = padding_layer(layers[inputs[0]])
-
 
 
 def convert_adaptive_avg_pool2d(params, w_name, scope_name, inputs, layers, weights, short_names):
@@ -1018,12 +1071,14 @@ AVAILABLE_CONVERTERS = {
     'onnx::AveragePool': convert_avgpool,
     'onnx::Dropout': convert_dropout,
     'onnx::BatchNormalization': convert_batchnorm,
+    'onnx::InstanceNormalization': convert_instancenorm,
     'onnx::Add': convert_elementwise_add,
     'onnx::Mul': convert_elementwise_mul,
     'onnx::Sub': convert_elementwise_sub,
     'onnx::Sum': convert_sum,
     'onnx::Concat': convert_concat,
     'onnx::Relu': convert_relu,
+    'onnx::PRelu': convert_prelu,
     'onnx::LeakyRelu': convert_lrelu,
     'onnx::Sigmoid': convert_sigmoid,
     'onnx::Softmax': convert_softmax,
@@ -1038,4 +1093,5 @@ AVAILABLE_CONVERTERS = {
     'onnx::Upsample': convert_upsample,
     'onnx::Pad': convert_padding,
     'aten::adaptive_avg_pool2d': convert_adaptive_avg_pool2d,
+    'aten::_convolution': convert_conv
 }

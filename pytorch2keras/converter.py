@@ -63,7 +63,6 @@ def pytorch_to_keras(
 ):
     """
     By given pytorch model convert layers with specified convertors.
-
     Args:
         model: pytorch model
         args: pytorch model arguments
@@ -72,7 +71,6 @@ def pytorch_to_keras(
         training: switch model to training mode
         verbose: verbose output
         short_names: use shorn names for keras layers
-
     Returns:
         model: created keras model.
     """
@@ -134,6 +132,8 @@ def pytorch_to_keras(
     for node in nodes:
         node_inputs = list(node.inputs())
         node_input_names = []
+        node_type = node.kind()
+       
         for node_input in node_inputs:
             if node_input.node().scopeName():
                 node_input_names.append(get_node_id(node_input.node()))
@@ -142,7 +142,6 @@ def pytorch_to_keras(
             node_input_names.append('input{0}'.format(input_index))
             input_index += 1
 
-        node_type = node.kind().replace("onnx::", "")
         # print(dir(node))
 
         node_scope_name = node.scopeName()
